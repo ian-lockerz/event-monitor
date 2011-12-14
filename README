@@ -1,0 +1,7 @@
+This is a kestrel client written in scala.
+
+It's built using ant.
+
+It uses Scala 2.8.2.final.
+
+It is not thread safe.
