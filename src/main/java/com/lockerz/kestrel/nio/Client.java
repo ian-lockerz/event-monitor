@@ -5,6 +5,7 @@ import com.lockerz.kestrel.ClientException;
 import com.lockerz.kestrel.async.GetResponseHandler;
 import com.lockerz.kestrel.async.SetResponseHandler;
 
+import org.apache.commons.pool.BasePoolableObjectFactory;
 import org.apache.commons.pool.ObjectPool;
 import org.apache.commons.pool.PoolableObjectFactory;
 import org.apache.commons.pool.impl.GenericObjectPool;
@@ -89,7 +90,7 @@ public class Client implements AsynchronousClient {
     public void set(String queueName, long expiration, byte[] data, SetResponseHandler handler)
         throws IOException
     {
-        //log.debug("set0000");
+        //log.debug("st00");
         StringBuilder buf = new StringBuilder();
         buf.append("set ").append(queueName).append(" 0 ");
         if (expiration > 0) {
@@ -105,6 +106,7 @@ public class Client implements AsynchronousClient {
         bb.put(data);
         bb.put("\r\n".getBytes());
         if (!this.workQueue.offer(WorkItem.set(bb.array(), new InternalSetHandler(handler)))) {
+            //log.debug("st01");
             handler.onError("OVERLOADED", "Work queue is overloaded");
         }
     }
@@ -112,7 +114,7 @@ public class Client implements AsynchronousClient {
     public void get(String queueName, long timeoutMs, boolean reliable, GetResponseHandler handler)
         throws IOException
     {
-        //log.debug("get0000");
+        //log.debug("get00");
         StringBuilder buf = new StringBuilder();
         buf.append("get ").append(queueName);
         if (timeoutMs > 0) {
@@ -186,6 +188,7 @@ public class Client implements AsynchronousClient {
             while (true) {
                 try {
                     WorkItem item = this.queue.take();
+                    //log.debug("qwr05");
                     try {
                         switch (item.getOp()) {
                             case SET : this.socketWorker.sendSet(item); break;
@@ -193,10 +196,13 @@ public class Client implements AsynchronousClient {
                             case MAYBE_SEND : this.socketWorker.maybeSend(item); break;
                             default : throw new RuntimeException("Unexpected op: " + item.getOp());
                         }
+                        //log.debug("qwr01 [{}]", item.getOp());
                     } catch (SocketPoolExhaustedException e) {
+                        //log.debug("qwr04");
                         log.trace("Socket pool exhausted");
                         log.trace("Adding item back to work queue for future processing");
                         if (!this.queue.offer(item)) {
+                            //log.debug("qwr02");
                             log.warn("Could not add item back to queue because queue is full");
                             item.getHandler().onError(
                                     "OVERLOADED",
@@ -204,6 +210,7 @@ public class Client implements AsynchronousClient {
                         }
                     }
                 } catch (Throwable t) {
+                    //log.debug("qwr03");
                     log.error("Caught throwable processing work queue [{}]", t.getMessage(), t);
                 }
             }
@@ -239,10 +246,17 @@ public class Client implements AsynchronousClient {
 
             // Create the socket pool
             this.socketPool = new GenericObjectPool(
-                    new SocketFactory(), maxSocketPoolSize, WHEN_EXHAUSTED_FAIL, 0L, maxSocketPoolSize);
+                    new SocketFactory(),
+                    maxSocketPoolSize,
+                    WHEN_EXHAUSTED_FAIL,
+                    0L,
+                    maxSocketPoolSize,
+                    true,
+                    false);
         }
 
         public void sendSet(WorkItem item) throws IOException {
+            //log.debug("ss00");
             try {
                 SocketChannel channel = (SocketChannel) this.socketPool.borrowObject();
                 if (this.activeWorkItems.put(channel, item) != null) {
@@ -266,6 +280,7 @@ public class Client implements AsynchronousClient {
         }
 
         public void sendGet(WorkItem item) throws IOException {
+            //log.debug("sg00");
             try {
                 log.trace("sendGet");
                 SocketChannel channel = (SocketChannel) this.socketPool.borrowObject();
@@ -382,6 +397,7 @@ public class Client implements AsynchronousClient {
         }
 
         private void read(SelectionKey key) throws Exception {
+            //log.debug("read0000");
             SocketChannel channel = (SocketChannel) key.channel();
             readBuf.clear();
             int numRead = channel.read(readBuf);
@@ -419,6 +435,7 @@ public class Client implements AsynchronousClient {
         }
 
         private void write(SelectionKey key) throws IOException {
+            //log.debug("write0000");
             SocketChannel channel = (SocketChannel) key.channel();
             synchronized (this.pendingData) {
                 log.trace("Reading from pendingData [{}]", channel.hashCode());
@@ -476,7 +493,7 @@ public class Client implements AsynchronousClient {
             }
         }
 
-        private class SocketFactory implements PoolableObjectFactory {
+        private class SocketFactory extends BasePoolableObjectFactory {
 
             public Object makeObject() throws Exception {
                 SocketChannel channel = SocketChannel.open();
@@ -504,13 +521,10 @@ public class Client implements AsynchronousClient {
             }
 
             public boolean validateObject(Object obj) {
-                return true;
-            }
-
-            public void activateObject(Object obj) throws Exception {
-            }
-
-            public void passivateObject(Object obj) throws Exception {
+                SocketChannel channel = (SocketChannel) obj;
+                boolean ret = channel.isConnected() || channel.isConnectionPending();
+                if (!ret) { log.debug("Socket channel is not connected"); }
+                return ret;
             }
         }
     }

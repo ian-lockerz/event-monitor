@@ -327,7 +327,7 @@ public class NioClientTests {
 
     @Test
     public void testSetAndForgetRandomLoadWithThreadPool() throws Throwable {
-        int iters = 10000;
+        int iters = 100000;
 
         final Set<String> values = new HashSet<String>();
         for (int i = 0; i < iters; i++) {
@@ -336,11 +336,12 @@ public class NioClientTests {
 
         assertEquals(iters, values.size());
 
+        /*
         for (String v : values) {
             client.setAndForget(this.queueName, 120L, v.getBytes());
         }
+        */
 
-        /*
         final CountDownLatch writeLatch = new CountDownLatch(iters);
         final int[] errorCount = new int[] { 0 };
 
@@ -358,9 +359,8 @@ public class NioClientTests {
         }
 
         synchronized (errorCount) { assertEquals(0, errorCount[0]); }
-        writeLatch.await(10, SECONDS);
+        writeLatch.await(60, SECONDS);
         assertEquals(0, writeLatch.getCount());
-        */
 
         final CountDownLatch readLatch = new CountDownLatch(iters);
         for (int i = 0; i < iters; i++) {
@@ -382,7 +382,7 @@ public class NioClientTests {
             });
         }
 
-        readLatch.await(10, SECONDS);
+        readLatch.await(60, SECONDS);
         assertEquals(0, readLatch.getCount());
         synchronized (values) { assertEquals(0, values.size()); }
     }
